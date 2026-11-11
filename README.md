@@ -205,3 +205,51 @@ transaction.
 
 Exit status is 0 for success, 1 for conversion/write failures, and 2 for invalid
 CLI arguments. The test command above also checks this converter.
+
+## Build the PANDA Level 10 approvers mapping
+
+`panda_roles10_to_mapping_xml.py` joins the second-approver file to the generated
+Level 10 role lookup by **Id** and writes the IdM workflow mapping table:
+
+```bash
+python3 panda_roles10_to_mapping_xml.py \
+  reports/panda_role10_approvers_mapping.csv \
+  reports/MT-PANDA-Role10-Approvers.xml \
+  --perfilMapeo reports/panda_role10_mapping.csv
+```
+
+The approvers input has `Name`, `Id`, `Grupo IDM` headers and is **tab-separated**
+by default. The role lookup has `Name`, `Id`, `DN` headers and is always
+comma-separated. For another approvers delimiter, add `--delimiter comma`,
+`--delimiter tab`, or a single character such as `--delimiter ';'`.
+
+The output is UTF-8 XML 1.0 with a `mapping-table` root, tab indentation, and four
+`nocase` columns:
+
+| Column | Value |
+| --- | --- |
+| `DN de perfil` | Role lookup `DN` for the approver row's `Id` |
+| `Primer aprobador` | `Gerente o nivel superior` |
+| `Segundo aprobador` | Approver row's `Grupo IDM` |
+| `Tercer aprobador` | `#NOT_REQUIRED#` |
+
+IDs are matched exactly after trimming surrounding whitespace; leading zeroes
+are retained. Names are descriptive, so different names across the two files do
+not prevent a matching ID from joining. The supplied DN is used directly.
+Approver input order is preserved; unused lookup roles are allowed. Identical
+repeated IDs within an input are consolidated; different required values for the
+same ID cause an error. A header-only approvers file produces four column
+definitions and no rows.
+
+The converter accepts UTF-8 with optional BOM, reordered headers, and additional
+named columns. Required fields must be nonblank. Malformed CSV, conflicting
+duplicates, missing referenced IDs, invalid XML text, and output paths aliasing
+either input are rejected before opening the XML for writing. Existing output
+is preserved on validation failure. The output directory must already exist;
+successful runs overwrite the selected file. A filesystem write failure can
+leave a partial XML. Role and group DNs are not checked against a live directory.
+
+The script prints unique input mapping counts and the written XML path/row count.
+It requires Python 3.9+ without extra packages. Exit codes: 0 success, 1
+conversion/write error, 2 invalid CLI arguments. The full test command above also
+checks this converter.
