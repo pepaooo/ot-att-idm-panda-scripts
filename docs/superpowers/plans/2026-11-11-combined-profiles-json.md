@@ -42,21 +42,21 @@ function as a compatibility wrapper for callers and existing tests.
 - `write_profiles(profiles: dict, output_dir: Path) -> None`: save indented UTF-8 JSON with Unicode preserved and print path/count.
 - `main(argv=None) -> int`: fetch, extract/validate, write JSON, write CSVs, print completion.
 
-- [ ] Add tests asserting full JSON contents/order across pages, duplicate retention,
+- [x] Add tests asserting full JSON contents/order across pages, duplicate retention,
   nested/Unicode round trips, unchanged unique CSV rows, and empty JSON/CSV output.
   Extend failure tests to check existing `profiles.json` is preserved; cover invalid
   later-page records and JSON writing failure suppressing success output.
-- [ ] Run `python3 -m unittest discover -s tests -v`; confirm new behavior fails before implementation.
-- [ ] Refactor retrieval into `fetch_profiles`, accumulate with list extension, and
+- [x] Run `python3 -m unittest discover -s tests -v`; confirm new behavior fails before implementation.
+- [x] Refactor retrieval into `fetch_profiles`, accumulate with list extension, and
   move category validation/deduplication into `extract_catalogs`. Preserve the
   `collect_catalogs` interface and validate all profiles before any output is written.
-- [ ] Add `write_profiles` using `json.dump(..., ensure_ascii=False, indent=2)` and a
+- [x] Add `write_profiles` using `json.dump(..., ensure_ascii=False, indent=2)` and a
   trailing newline. Integrate the four outputs into `main`; retain existing error
   exit codes and sanitized messages. Describe write failures as affecting report files.
-- [ ] Update README with `profiles.json`, preservation semantics, full record count,
+- [x] Update README with `profiles.json`, preservation semantics, full record count,
   unchanged CLI examples, and the documented limit on filesystem transactionality.
-- [ ] Run `python3 -m unittest discover -s tests -v` and `python3 export_profile_catalogs.py --help`;
-  expect all tests passing and help exit 0. Obtain an independent read-only final
+- [x] Run `python3 -m unittest discover -s tests -v` and `python3 export_profile_catalogs.py --help`;
+  expect all tests passing and help exit 0. Complete an independent read-only final
   review per the executing-plans skill, fixing any material findings with regression tests.
 
 ## Execution context

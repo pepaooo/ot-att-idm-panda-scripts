@@ -104,7 +104,7 @@ class ExportTests(unittest.TestCase):
                     URLError('SECRET'), TimeoutError('SECRET')]
         for failure in failures:
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
-                for name in ('templates.csv', 'areas.csv', 'levels.csv'):
+                for name in ('profiles.json', 'templates.csv', 'areas.csv', 'levels.csv'):
                     (Path(tmp) / name).write_text('existing')
                 self.opener.open.side_effect = [response(page([item()], 0, 2)), failure]
                 err = io.StringIO()
@@ -112,8 +112,63 @@ class ExportTests(unittest.TestCase):
                     code = exporter.main(['--token', 'SECRET', '--output-dir', tmp])
                 self.assertEqual(code, 1)
                 self.assertNotIn('SECRET', err.getvalue())
-                for name in ('templates.csv', 'areas.csv', 'levels.csv'):
+                for name in ('profiles.json', 'templates.csv', 'areas.csv', 'levels.csv'):
                     self.assertEqual((Path(tmp) / name).read_text(), 'existing')
+
+    def test_combined_json_preserves_full_records_order_and_duplicates(self):
+        first = item('Área, "Core"', '001')
+        first['extra'] = {'nested': [True, None, {'label': 'México'}]}
+        second = item('Vendor', 'VEN')
+        self.opener.open.side_effect = [response(page([first, second], 0, 2)),
+                                        response(page([first], 1, 2))]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(exporter.main(['--token', 'SECRET', '--output-dir', tmp]), 0)
+            raw = (Path(tmp) / 'profiles.json').read_text(encoding='utf-8')
+            self.assertEqual(json.loads(raw), {'content': [first, second, first]})
+            self.assertIn('México', raw)
+            for name in ('templates.csv', 'areas.csv', 'levels.csv'):
+                with (Path(tmp) / name).open(encoding='utf-8', newline='') as handle:
+                    self.assertEqual(list(csv.reader(handle)),
+                                     [['name', 'key'], ['Vendor', 'VEN'], ['Área, "Core"', '001']])
+            self.assertIn('3 profiles', output.getvalue())
+            self.assertTrue(output.getvalue().rstrip().endswith('Export completed successfully.'))
+
+    def test_empty_json_and_csv_outputs(self):
+        self.opener.open.return_value = response(page([], total=0))
+        with tempfile.TemporaryDirectory() as tmp:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(exporter.main(['--token', 'SECRET', '--output-dir', tmp]), 0)
+            self.assertEqual(json.loads((Path(tmp) / 'profiles.json').read_text()), {'content': []})
+            for name in ('templates.csv', 'areas.csv', 'levels.csv'):
+                self.assertEqual((Path(tmp) / name).read_text(), 'name,key\n')
+
+    def test_invalid_later_record_preserves_all_outputs(self):
+        self.opener.open.side_effect = [response(page([item()], 0, 2)),
+                                        response(page([item(key=None)], 1, 2))]
+        with tempfile.TemporaryDirectory() as tmp:
+            names = ('profiles.json', 'templates.csv', 'areas.csv', 'levels.csv')
+            for name in names:
+                (Path(tmp) / name).write_text('existing')
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(exporter.main(['--token', 'SECRET', '--output-dir', tmp]), 1)
+            self.assertNotIn('Export completed successfully.', output.getvalue())
+            for name in names:
+                self.assertEqual((Path(tmp) / name).read_text(), 'existing')
+
+    def test_json_write_failure_does_not_report_success(self):
+        self.opener.open.return_value = response(page([item()]))
+        with tempfile.TemporaryDirectory() as tmp:
+            # A directory at the output filename causes a real filesystem write failure.
+            (Path(tmp) / 'profiles.json').mkdir()
+            output, errors = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(exporter.main(['--token', 'SECRET', '--output-dir', tmp]), 1)
+            self.assertNotIn('Export completed successfully.', output.getvalue())
+            self.assertIn('Error:', errors.getvalue())
+            self.assertFalse((Path(tmp) / 'templates.csv').exists())
 
     def test_invalid_arguments(self):
         for args in ([], ['--token', ''], ['--token', 'SECRET', '--page-size', '0'],

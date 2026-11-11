@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export unique template, area, and level pairs from the profiles API."""
+"""Export all profiles as JSON and unique template, area, and level pairs as CSV."""
 
 import argparse
 import csv
@@ -25,9 +25,9 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def collect_catalogs(url: str, token: str, page_size: int) -> dict:
-    """Fetch all pages, validating their contents before returning unique pairs."""
-    catalogs = {kind: set() for kind in REPORTS}
+def fetch_profiles(url: str, token: str, page_size: int) -> dict:
+    """Fetch all pages into one content array, preserving complete profile records."""
+    profiles = {'content': []}
     parts = urlsplit(url)
     query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
              if key not in ('page', 'size')]
@@ -77,22 +77,44 @@ def collect_catalogs(url: str, token: str, page_size: int) -> dict:
                 or (not last and not content)):
             raise ExportError(f'Inconsistent pagination metadata on page {number}.')
 
-        for index, record in enumerate(content):
-            for kind in REPORTS:
-                value = record.get(kind) if isinstance(record, dict) else None
-                if (not isinstance(value, dict)
-                        or not isinstance(value.get('name'), str)
-                        or not isinstance(value.get('key'), str)):
-                    raise ExportError(f'Invalid {kind} name/key on page {number}, '
-                                      f'item {index + 1}; expected strings.')
-                catalogs[kind].add((value['name'], value['key']))
+        profiles['content'].extend(content)
         processed += len(content)
         print(f'Page {number} OK ({number + 1}/{max(total, 1)}): '
               f'{len(content)} profiles; {processed} processed in total.',
               file=sys.stderr, flush=True)
         if last:
-            return catalogs
+            return profiles
         number += 1
+
+
+def extract_catalogs(profiles: dict) -> dict:
+    """Validate the combined profiles and collect unique pairs without changing records."""
+    catalogs = {kind: set() for kind in REPORTS}
+    for index, record in enumerate(profiles['content']):
+        for kind in REPORTS:
+            value = record.get(kind) if isinstance(record, dict) else None
+            if (not isinstance(value, dict)
+                    or not isinstance(value.get('name'), str)
+                    or not isinstance(value.get('key'), str)):
+                raise ExportError(f'Invalid {kind} name/key in combined profile '
+                                  f'{index + 1}; expected strings.')
+            catalogs[kind].add((value['name'], value['key']))
+    return catalogs
+
+
+def collect_catalogs(url: str, token: str, page_size: int) -> dict:
+    """Fetch and validate all profiles, returning the unique catalog pairs."""
+    return extract_catalogs(fetch_profiles(url, token, page_size))
+
+
+def write_profiles(profiles: dict, output_dir: Path) -> None:
+    """Save the full combined document as readable UTF-8 JSON."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / 'profiles.json'
+    with target.open('w', encoding='utf-8', newline='\n') as handle:
+        json.dump(profiles, handle, ensure_ascii=False, indent=2)
+        handle.write('\n')
+    print(f"{target}: {len(profiles['content'])} profiles", flush=True)
 
 
 def write_catalogs(catalogs: dict, output_dir: Path) -> None:
@@ -142,7 +164,10 @@ def main(argv=None) -> int:
     if not valid:
         parser.error('--url must be an HTTPS URL without credentials or a fragment')
     try:
-        catalogs = collect_catalogs(args.url, args.token, args.page_size)
+        profiles = fetch_profiles(args.url, args.token, args.page_size)
+        # Validate every record before replacing any existing JSON or CSV report.
+        catalogs = extract_catalogs(profiles)
+        write_profiles(profiles, args.output_dir)
         write_catalogs(catalogs, args.output_dir)
         print('Export completed successfully.', flush=True)
     except ExportError as exc:

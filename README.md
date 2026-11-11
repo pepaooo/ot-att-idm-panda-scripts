@@ -1,4 +1,4 @@
-# Profile catalog CSV exporter
+# Profile JSON and catalog CSV exporter
 
 Requires Python 3. No packages need to be installed.
 
@@ -37,11 +37,20 @@ explicitly. An expired token stops the export; supply a fresh token and rerun.
 
 The output directory contains:
 
+- `profiles.json`
 - `templates.csv`
 - `areas.csv`
 - `levels.csv`
 
-Each file has exactly the columns `name,key`. Unique `(name, key)` pairs are
+`profiles.json` is a single document shaped as `{"content": [...]}` containing
+every profile from every page. All record fields, nested values, duplicates, and
+retrieval order are preserved. Page-level pagination metadata is omitted. JSON is
+indented UTF-8 with Unicode characters preserved; an empty result is
+`{"content": []}`. This file can serve as input to a future processing script.
+
+The three CSVs are generated from the same combined content in memory; the JSON
+file is not reread during this run. Each CSV has exactly the columns `name,key`.
+Unique `(name, key)` pairs are
 collected independently across all profiles and sorted by name, then key. Different
 names sharing a key and different keys sharing a name are retained. String keys
 such as `023` are preserved; spreadsheet software may require importing the key
@@ -49,20 +58,22 @@ column as text. Files use UTF-8 and standard CSV quoting for commas, quotes, and
 newlines. Empty catalogs produce headers only. The default output directory is
 the current directory.
 
-Existing reports are overwritten after all pages have been fetched and validated.
-API, network, or data-validation errors leave existing reports untouched. A disk
+Existing JSON and CSV reports are overwritten after all pages have been fetched
+and every catalog record validated. API, network, or data-validation errors leave
+all existing reports untouched. A disk
 or permissions failure during writing can leave partially written reports; the
-three files are not replaced as a single transaction. Results also depend on the
+four files are not replaced as a single transaction. Results also depend on the
 API remaining consistent while pages are fetched.
 
 Progress is shown automatically while running: each requested page (starting at
-zero), each successfully validated page, its profile count, and the running total.
+zero), each received page with valid pagination, its profile count, and the running total.
 These messages go to standard error and are flushed immediately, so they remain
 visible while the next request is in progress. A request can wait up to 30 seconds
 before reporting a timeout. Tokens, headers, and response bodies are not printed.
 
-The script prints each output path and its unique pair count, followed by
-`Export completed successfully.` only after all three files are written. Exit status is 0
+The script prints the JSON path and full profile count, then each CSV path and
+its unique pair count, followed by `Export completed successfully.` only after all
+four files are written. Exit status is 0
 for success, 1 for request/data/write failures, and 2 for invalid arguments.
 
 Run local tests (simulated API responses, no token or network required):
