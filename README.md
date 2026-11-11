@@ -81,3 +81,127 @@ Run local tests (simulated API responses, no token or network required):
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Convert PANDA profiles into IdM CSVs
+
+`panda_profiles_to_resource_csv.py` reads the combined `profiles.json` locally.
+It does not call the API or need a token. Use the same four output flags as the
+Salesforce converter, individually or together:
+
+```bash
+python3 panda_profiles_to_resource_csv.py reports/profiles.json \
+  --generaRecursos reports/panda_resources.csv \
+  --genereRoles reports/panda_roles.csv \
+  --generaAsociaciones reports/panda_associations.csv \
+  --generaMapeoRol10 reports/panda_role10_mapping.csv
+```
+
+Output directories must already exist. The resource, role, and association CSVs
+have 13, 12, and 12 columns respectively, without headers. The mapping has three
+columns with the header `"Name","Id","DN"`. All fields are quoted and files use
+UTF-8. Each selected file's path and data-row count are printed after it is written.
+
+Only combinations present in `content` are processed. For template key `6`, area
+key `HORUS`, and level key `ULAVP`, the converter uses:
+
+- Role and resource CN: `PANDA-6-HORUS-ULAVP`.
+- Metadata `ID`: `6-HORUS-ULAVP`.
+- Metadata `ID2`: the three names joined by hyphens, such as `Horus User-Horus Access-AVP`.
+- Category for resources and roles: `panda-perfil`.
+- Resource permission DN: `cn=Permission,cn=MID-PANDA,cn=DriverSet1,ou=idm,ou=services,o=system`.
+- Association target: `cn=PANDA-Permission-DRS,cn=ResourceDefs,cn=RoleConfig,cn=AppConfig,cn=User Application Driver,cn=DriverSet1,ou=idm,ou=services,o=system`.
+
+Roles use the existing `cn=Level10,cn=RoleDefs,...` base, and resources use the
+existing `cn=ResourceDefs,...` base from the Salesforce reference. Associations
+link each role to the shared `PANDA-Permission-DRS` resource with its combination's
+metadata. They do not link to the individually generated resource DN.
+
+Resource and association metadata fields retain the reference's legacy format:
+
+```text
+"{\"ID\":\"6-HORUS-ULAVP\",\"ID2\":\"Horus User-Horus Access-AVP\"}"
+```
+
+This field uses backslash escaping; other fields use standard CSV doubled quotes.
+Generic CSV parsers configured for ordinary CSV quoting may not decode this mixed
+format correctly. Quotes, backslashes, and newlines inside metadata names are
+JSON-escaped before the outer escaping is applied. Original names remain in
+metadata, descriptions, and mapping rows. Resource and role display names remove
+the same punctuation as the Salesforce reference (`* + ~ = / \\ # " , ;`).
+
+Exact duplicate key/name combinations are skipped in first-occurrence order.
+Different names for the same key triple or different triples yielding the same
+joined ID cause an error. Keys retain leading zeroes. CNs longer than 64 characters
+or containing unsafe DN characters are rejected rather than truncated.
+
+The entire input and every selected output path are checked before files are
+opened for writing. Missing or empty fields, malformed input, conflicting data,
+and output paths aliasing the input or another output cause an error without
+replacing existing outputs. Empty `content` produces empty resource/role/association
+files and a header-only mapping. Valid runs overwrite selected outputs; disk-write
+failures may leave partial files because writes are not a multi-file transaction.
+
+Exit status is 0 for success, 1 for input/path/write errors, 2 for invalid CLI
+arguments, and 3 if no output flag is supplied. The test command above checks both
+the API exporter and this converter.
+
+## Convert PANDA catalogs into XML mapping tables
+
+`panda_catalogs_to_xml.py` requires Python 3.9 or newer and no additional packages.
+It accepts any subset of the three catalog CSVs. To convert all three:
+
+```bash
+python3 panda_catalogs_to_xml.py \
+  --templates reports/templates.csv \
+  --areas reports/areas.csv \
+  --levels reports/levels.csv
+```
+
+This creates the following files in the **current directory**:
+
+- `MT-Catalogo-templates.xml`
+- `MT-Catalogo-area.xml`
+- `MT-Catalogo-level.xml`
+
+To convert only templates and choose an output path:
+
+```bash
+python3 panda_catalogs_to_xml.py \
+  --templates reports/templates.csv \
+  --templates-output reports/custom-templates.xml
+```
+
+Use `--areas-output` and `--levels-output` for the other overrides. An output
+override requires its corresponding input. Output directories must already exist.
+
+Each file is a UTF-8 XML 1.0 document with tab indentation and this structure:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<mapping-table>
+	<col-def name="id" type="nocase" />
+	<col-def name="name" type="nocase" />
+	<row>
+		<col>14</col>
+		<col>Admin User</col>
+	</row>
+</mapping-table>
+```
+
+CSV `key` maps to the first (`id`) column and CSV `name` to the second (`name`)
+column, regardless of CSV header order. Values, row order, duplicates, and leading
+zeroes are preserved. XML special characters are escaped automatically. UTF-8 CSV
+with or without a BOM, quoted commas, and quoted newlines are supported. A
+header-only catalog produces both column definitions and no rows.
+
+Headers must be unique and include `name` and `key`; extra named columns are
+ignored. Malformed CSV, inconsistent field counts, blank required values, and
+characters forbidden by XML 1.0 cause an error. Every selected input and output
+path is validated before writing; outputs cannot alias any selected input or
+another output. Input/validation/path failures leave existing XMLs untouched.
+Successful conversions overwrite selected outputs and print their paths and row
+counts. Disk-write failures can leave partial files; writes are not a multi-file
+transaction.
+
+Exit status is 0 for success, 1 for conversion/write failures, and 2 for invalid
+CLI arguments. The test command above also checks this converter.
