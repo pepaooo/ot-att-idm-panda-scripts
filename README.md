@@ -253,3 +253,58 @@ The script prints unique input mapping counts and the written XML path/row count
 It requires Python 3.9+ without extra packages. Exit codes: 0 success, 1
 conversion/write error, 2 invalid CLI arguments. The full test command above also
 checks this converter.
+
+## Export the PANDA vendors catalog
+
+`export_vendor_catalog.py` fetches the vendors catalog once and generates CSV and
+XML from the same response. Python 3.9+ is required; no extra packages are needed.
+
+```bash
+python3 export_vendor_catalog.py --token 'YOUR_VALID_TOKEN' --output-dir reports
+```
+
+The default URL is `https://panda.att.com.mx/apiQA/v1/catalogs/vendors`. To specify
+an endpoint explicitly:
+
+```bash
+python3 export_vendor_catalog.py --token 'YOUR_VALID_TOKEN' \
+  --url 'https://panda.att.com.mx/apiQA/v1/catalogs/vendors' \
+  --output-dir reports
+```
+
+The token is obtained manually and supplied without the `Bearer ` prefix. Token
+handling follows the profile exporter's conventions above. This API is not
+paginated: the script makes one GET request without adding page/size parameters.
+HTTPS is required, redirects are rejected, and the request timeout is 30 seconds.
+An expired token stops the export; supply a fresh token and rerun.
+
+The requested output directory is created if necessary and contains:
+
+- `vendors.csv`: UTF-8 CSV with exactly `cve,name,businessName` columns. JSON null
+  business names become empty cells; an empty string also produces an empty cell.
+- `MT-Catalogo-vendors.xml`: UTF-8 XML with the `mapping-table` root, two `nocase`
+  columns (`id`, `name`), and one row per vendor: `cve` first, then `name`.
+
+Both reports preserve record order, duplicates, and every string exactly,
+including leading/trailing spaces, Unicode, leading zeroes, quotes, and multiline
+values. CSV quoting and XML escaping handle punctuation automatically. No sorting,
+trimming, deduplication, or business-name substitution is performed. Additional
+object fields are ignored. An empty response array produces a header-only CSV
+and an XML table containing the two column definitions with no rows.
+
+The default output directory is the current directory. Progress appears
+immediately on standard error: request start, followed by the validated vendor
+count. Written paths and row counts appear on standard output, followed by
+`Export completed successfully.` only after both reports are written. The token,
+headers, and response body are not printed.
+
+The entire response is validated before reports are opened. Invalid JSON, missing
+fields, wrong types, invalid Unicode/XML characters, and aliased output files
+cause an error. `cve` and `name` must be nonblank strings; `businessName` must be
+a string or null. HTTP/network/response-validation failures preserve existing
+reports. Successful exports overwrite both files. Disk-write failures can leave
+partial outputs because the two writes are not a single transaction.
+
+Exit codes are 0 for success, 1 for request/validation/write errors, and 2 for
+invalid arguments. The full unittest command above also checks vendor export
+using simulated API responses; no live token is required for tests.
